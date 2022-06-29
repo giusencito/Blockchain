@@ -95,8 +95,10 @@ func BroadcastBlock(newBlock Block) {
 }
 
 func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
+	fmt.Println("NEw listen antes de  Protocol y localhosty DEst correiendo antes de la validacion")
 	ln, _ := net.Listen(PROTOCOL, LOCALHOST)
 	defer ln.Close()
+
 	for {
 		conn, _ := ln.Accept()
 		defer conn.Close()
@@ -138,51 +140,7 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 
 /******************BLOCKCHAIN**********************/
 
-type Login struct {
-	Username       string
-	Password       string
-}
-
-type PermissionLevel int32
-type ConsensusLevel int32
-const (
-
-Read  PermissionLevel =0
-Write  PermissionLevel =1
-ReadOrWrite  PermissionLevel =2
-All      ConsensusLevel=0
-ONE      ConsensusLevel=1
-MAJORITY      ConsensusLevel=2
-OWNER      ConsensusLevel=3
-)
-
-type ThridEntity struct{
-	Username       string
-	Password       string
-	FullName       string
-	Email          string
-}
-type DataKeeper struct{
-	Username       string
-	Password       string
-	FullName       string
-	Email          string
-}
-type Record struct{
-    datakeepers  []DataKeeper
-	id           int
-    ConsensusLevel ConsensusLevel
-}
-type Policy struct{
-  entity ThridEntity
-  record   Record
-  id       int
-  level    PermissionLevel
-
-}
-
-
-type MedicalRecord struct {
+/*type MedicalRecord struct {
 	Name       string
 	Year       string
 	Hospital   string
@@ -190,19 +148,26 @@ type MedicalRecord struct {
 	Diagnostic string
 	Medication string
 	Procedure  string
+}*/
+
+type Message struct {
+	MessagetoSend string
+	ToHost        string
 }
 
 type Block struct {
 	Index        int
 	Timestamp    time.Time
-	Data         MedicalRecord
+	Data         Message
 	PreviousHash string
 	Hash         string
 }
 
 func (block *Block) CalculateHash() string {
 	src := fmt.Sprintf("%d-%s-%s", block.Index, block.Timestamp.String(), block.Data)
+
 	return base64.StdEncoding.EncodeToString([]byte(src))
+
 }
 
 type BlockChain struct {
@@ -213,7 +178,7 @@ func (blockChain *BlockChain) CreateGenesisBlock() Block {
 	block := Block{
 		Index:        0,
 		Timestamp:    time.Now(),
-		Data:         MedicalRecord{},
+		Data:         Message{},
 		PreviousHash: "0",
 	}
 	block.Hash = block.CalculateHash()
@@ -262,15 +227,16 @@ var localBlockChain BlockChain
 func PrintMedicalRecords() {
 	blocks := localBlockChain.Chain[1:]
 	for index, block := range blocks {
-		medicalRecord := block.Data
-		fmt.Printf("- - - Medical Record No. %d - - - \n", index+1)
-		fmt.Printf("\tName: %s\n", medicalRecord.Name)
-		fmt.Printf("\tYear: %s\n", medicalRecord.Year)
-		fmt.Printf("\tHospital: %s\n", medicalRecord.Hospital)
-		fmt.Printf("\tDoctor: %s\n", medicalRecord.Doctor)
-		fmt.Printf("\tDiagnostic: %s\n", medicalRecord.Diagnostic)
-		fmt.Printf("\tMedication: %s\n", medicalRecord.Medication)
-		fmt.Printf("\tProcedure: %s\n", medicalRecord.Procedure)
+		messagetosend := block.Data
+		fmt.Printf("- - - Message Record No. %d - - - \n", index+1)
+		fmt.Printf("\tMessage: %s\n", messagetosend.MessagetoSend)
+		fmt.Printf("\tTo: %s\n", messagetosend.ToHost)
+		/*
+			fmt.Printf("\tHospital: %s\n", medicalRecord.Hospital)
+			fmt.Printf("\tDoctor: %s\n", medicalRecord.Doctor)
+			fmt.Printf("\tDiagnostic: %s\n", medicalRecord.Diagnostic)
+			fmt.Printf("\tMedication: %s\n", medicalRecord.Medication)
+			fmt.Printf("\tProcedure: %s\n", medicalRecord.Procedure)*/
 	}
 }
 
@@ -285,6 +251,8 @@ func PrintHosts() {
 
 func main() {
 	var dest string
+	var portreceiver string
+	exist := false
 	end := make(chan int)
 	updatedBlocks := make(chan int)
 	fmt.Print("Enter your host: ")
@@ -292,6 +260,7 @@ func main() {
 	fmt.Print("Enter destination host(Empty to be the first node): ")
 	fmt.Scanf("%s\n", &dest)
 	go BCIPServer(end, updatedBlocks)
+	fmt.Print("Luego del BCIP")
 	localBlockChain = CreateBlockChain()
 	if dest != "" {
 		requestBody := &RequestBody{
@@ -306,20 +275,43 @@ func main() {
 		<-updatedBlocks
 	}
 	var action int
-	fmt.Println("Welcome to MedicalRecordApp! 😇")
+	fmt.Println("Welcome to the Message Network! 😇")
 	in := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("1. New Medical Record\n2. List Medical Records\n3. List Hosts\n")
+		fmt.Print("1. New Message to Send\n2. List Messages Records\n3. List Hosts\n")
 		fmt.Print("😌 Enter action(1|2|3):")
 		fmt.Scanf("%d\n", &action)
 		if action == NEWMR {
-			medicalRecord := MedicalRecord{}
-			fmt.Println("- - - Register - - -")
-			fmt.Print("Enter name: ")
-			medicalRecord.Name, _ = in.ReadString('\n')
-			fmt.Print("Enter year: ")
-			medicalRecord.Year, _ = in.ReadString('\n')
-			fmt.Print("Enter hospital: ")
+			messagetosend := Message{}
+			fmt.Println("- - - Message sender- receiver Network - - -")
+			fmt.Print("Enter the message to send: ")
+			messagetosend.MessagetoSend, _ = in.ReadString('\n')
+			fmt.Print("Enter the Host to send the message: ")
+			fmt.Scanf("%s\n", &portreceiver)
+
+			for _, host := range HOSTS {
+				if host == portreceiver {
+					exist = true
+
+				} else {
+					exist = false
+				}
+			}
+
+			if exist == true {
+				messagetosend.ToHost = portreceiver
+				newBlock := Block{
+					Data: messagetosend,
+				}
+				localBlockChain.AddBlock(newBlock)
+				BroadcastBlock(newBlock)
+				fmt.Println("You have send the mesage successfully! 😀\n")
+				time.Sleep(2 * time.Second)
+				PrintMedicalRecords()
+			} else {
+				fmt.Printf("Not exist the receiver\n")
+			}
+			/*fmt.Print("Enter hospital: ")
 			medicalRecord.Hospital, _ = in.ReadString('\n')
 			fmt.Print("Enter doctor: ")
 			medicalRecord.Doctor, _ = in.ReadString('\n')
@@ -328,21 +320,14 @@ func main() {
 			fmt.Print("Enter medication: ")
 			medicalRecord.Medication, _ = in.ReadString('\n')
 			fmt.Print("Enter procedure: ")
-			medicalRecord.Procedure, _ = in.ReadString('\n')
-			newBlock := Block{
-				Data: medicalRecord,
-			}
-			localBlockChain.AddBlock(newBlock)
-			BroadcastBlock(newBlock)
-			fmt.Println("You have registered successfully! 😀")
-			time.Sleep(2 * time.Second)
-			PrintMedicalRecords()
+			medicalRecord.Procedure, _ = in.ReadString('\n')*/
+
 		} else if action == LISTMR {
 			PrintMedicalRecords()
 		} else if action == LISTHOSTS {
 			PrintHosts()
 		}
+
 	}
 	<-end
 }
-
