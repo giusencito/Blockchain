@@ -138,6 +138,50 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 
 /******************BLOCKCHAIN**********************/
 
+type Login struct {
+	Username       string
+	Password       string
+}
+
+type PermissionLevel int32
+type ConsensusLevel int32
+const (
+
+Read  PermissionLevel =0
+Write  PermissionLevel =1
+ReadOrWrite  PermissionLevel =2
+All      ConsensusLevel=0
+ONE      ConsensusLevel=1
+MAJORITY      ConsensusLevel=2
+OWNER      ConsensusLevel=3
+)
+
+type ThridEntity struct{
+	Username       string
+	Password       string
+	FullName       string
+	Email          string
+}
+type DataKeeper struct{
+	Username       string
+	Password       string
+	FullName       string
+	Email          string
+}
+type Record struct{
+    datakeepers  []DataKeeper
+	id           int
+    ConsensusLevel ConsensusLevel
+}
+type Policy struct{
+  entity ThridEntity
+  record   Record
+  id       int
+  level    PermissionLevel
+
+}
+
+
 type MedicalRecord struct {
 	Name       string
 	Year       string
