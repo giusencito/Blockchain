@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strings"
-	"time"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 type MessageType int32
@@ -24,6 +25,8 @@ const (
 	NEWMR                 = 1
 	LISTMR                = 2
 	LISTHOSTS             = 3
+	NEWMETS               = 4
+	LISTMER               = 5
 )
 
 /******************BCIP**********************/
@@ -95,6 +98,19 @@ func BroadcastBlock(newBlock Block) {
 	}
 }
 
+func BroadcastBlockMessage(wg *sync.WaitGroup, newBlock BlockMessage) {
+	defer wg.Done()
+	for _, host := range HOSTS {
+		data, _ := json.Marshal(newBlock)
+		requestBroadcast := RequestBody{
+			Message:     string(data),
+			MessageType: ADDBLOCK,
+		}
+		broadcastMessage, _ := json.Marshal(requestBroadcast)
+		SendMessage(host, string(broadcastMessage))
+	}
+}
+
 func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 	ln, _ := net.Listen(PROTOCOL, LOCALHOST)
 	defer ln.Close()
@@ -139,51 +155,54 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 
 /******************BLOCKCHAIN**********************/
 
+type Message struct {
+	MessagetoSend string
+	ToHost        string
+	FromHost      string
+}
+
 type Login struct {
-	Username       string
-	Password       string
+	Username string
+	Password string
 }
 
 type PermissionLevel int32
 type ConsensusLevel int32
-const (
 
-Read  PermissionLevel =0
-Write  PermissionLevel =1
-ReadOrWrite  PermissionLevel =2
-All      ConsensusLevel=0
-ONE      ConsensusLevel=1
-MAJORITY      ConsensusLevel=2
-OWNER      ConsensusLevel=3
+const (
+	Read        PermissionLevel = 0
+	Write       PermissionLevel = 1
+	ReadOrWrite PermissionLevel = 2
+	All         ConsensusLevel  = 0
+	ONE         ConsensusLevel  = 1
+	MAJORITY    ConsensusLevel  = 2
+	OWNER       ConsensusLevel  = 3
 )
 
-type ThridEntity struct{
-	Username       string
-	Password       string
-	Email          string
-	readwrite      int
-
+type ThridEntity struct {
+	Username  string
+	Password  string
+	Email     string
+	readwrite int
 }
-type DataKeeper struct{
-	Username       string
-	Password       string
-	FullName       string
-	Email          string
+type DataKeeper struct {
+	Username string
+	Password string
+	FullName string
+	Email    string
 }
-type Record struct{
-    datakeepers  []DataKeeper
-	id           int
-    ConsensusLevel ConsensusLevel
+type Record struct {
+	datakeepers    []DataKeeper
+	id             int
+	ConsensusLevel ConsensusLevel
 	MedicalRecord  MedicalRecord
 }
-type Policy struct{
-  entity ThridEntity
-  record   Record
-  id       int
-  level    PermissionLevel
-
+type Policy struct {
+	entity ThridEntity
+	record Record
+	id     int
+	level  PermissionLevel
 }
-
 
 type MedicalRecord struct {
 	Name       string
@@ -203,13 +222,30 @@ type Block struct {
 	Hash         string
 }
 
+type BlockMessage struct {
+	Index        int
+	Timestamp    time.Time
+	Data         Message
+	PreviousHash string
+	Hash         string
+}
+
 func (block *Block) CalculateHash() string {
+	src := fmt.Sprintf("%d-%s-%s", block.Index, block.Timestamp.String(), block.Data)
+	return base64.StdEncoding.EncodeToString([]byte(src))
+}
+
+func (block *BlockMessage) CalculateHashMessage() string {
 	src := fmt.Sprintf("%d-%s-%s", block.Index, block.Timestamp.String(), block.Data)
 	return base64.StdEncoding.EncodeToString([]byte(src))
 }
 
 type BlockChain struct {
 	Chain []Block
+}
+
+type BlockChainMessages struct {
+	Chain []BlockMessage
 }
 
 func (blockChain *BlockChain) CreateGenesisBlock() Block {
@@ -223,7 +259,23 @@ func (blockChain *BlockChain) CreateGenesisBlock() Block {
 	return block
 }
 
+func (blockChain *BlockChainMessages) CreateGenesisMessageBlock() BlockMessage {
+	block := BlockMessage{
+		Index:        0,
+		Timestamp:    time.Now(),
+		Data:         Message{},
+		PreviousHash: "0",
+	}
+	block.Hash = block.CalculateHashMessage()
+	return block
+}
+
 func (blockChain *BlockChain) GetLatesBlock() Block {
+	n := len(blockChain.Chain)
+	return blockChain.Chain[n-1]
+}
+
+func (blockChain *BlockChainMessages) GetLatesMessageBlock() BlockMessage {
 	n := len(blockChain.Chain)
 	return blockChain.Chain[n-1]
 }
@@ -233,6 +285,15 @@ func (blockChain *BlockChain) AddBlock(block Block) {
 	block.Index = blockChain.GetLatesBlock().Index + 1
 	block.PreviousHash = blockChain.GetLatesBlock().Hash
 	block.Hash = block.CalculateHash()
+	blockChain.Chain = append(blockChain.Chain, block)
+}
+
+func (blockChain *BlockChainMessages) AddMessageBlock(wg *sync.WaitGroup, block BlockMessage) {
+	defer wg.Done()
+	block.Timestamp = time.Now()
+	block.Index = blockChain.GetLatesMessageBlock().Index + 1
+	block.PreviousHash = blockChain.GetLatesMessageBlock().Hash
+	block.Hash = block.CalculateHashMessage()
 	blockChain.Chain = append(blockChain.Chain, block)
 }
 
@@ -251,25 +312,50 @@ func (blockChain *BlockChain) IsChainValid() bool {
 	return true
 }
 
-func CreateBlockChain() (BlockChain) {
+func (blockChain *BlockChainMessages) IsMessagesChainValid() bool {
+	n := len(blockChain.Chain)
+	for i := 1; i < n; i++ {
+		currentBlock := blockChain.Chain[i]
+		previousBlock := blockChain.Chain[i-1]
+		if currentBlock.Hash != currentBlock.CalculateHashMessage() {
+			return false
+		}
+		if currentBlock.PreviousHash != previousBlock.Hash {
+			return false
+		}
+	}
+	return true
+}
+
+func CreateBlockChain() BlockChain {
 	bc := BlockChain{}
 	genesisBlock := bc.CreateGenesisBlock()
-	
+
+	bc.Chain = append(bc.Chain, genesisBlock)
+	return bc
+}
+
+func CreateMessageBlockChain() BlockChainMessages {
+	bc := BlockChainMessages{}
+	genesisBlock := bc.CreateGenesisMessageBlock()
+
 	bc.Chain = append(bc.Chain, genesisBlock)
 	return bc
 }
 
 var localBlockChain BlockChain
+var localBlockChainMessage BlockChainMessages
 var policies []Policy
 var records []Record
 var medicalrecords []MedicalRecord
+
 /******************MAIN**********************/
 
 func PrintMedicalRecords() {
 
 	for block := range medicalrecords {
 		medicalRecord := medicalrecords[block]
-	
+
 		fmt.Printf("\tName: %s\n", medicalRecord.Name)
 		fmt.Printf("\tYear: %s\n", medicalRecord.Year)
 		fmt.Printf("\tHospital: %s\n", medicalRecord.Hospital)
@@ -282,6 +368,17 @@ func PrintMedicalRecords() {
 	}
 }
 
+func PrintMessagesRecords() {
+	blocks := localBlockChainMessage.Chain[1:]
+	for index, block := range blocks {
+		messagetosend := block.Data
+		fmt.Printf("- - - Message Record No. %d - - - \n", index+1)
+		fmt.Printf("\tMessage: %s\n", messagetosend.MessagetoSend)
+		fmt.Printf("\tFrom: %s\n", messagetosend.FromHost)
+		fmt.Printf("\tTo: %s\n", messagetosend.ToHost)
+	}
+}
+
 func PrintHosts() {
 	fmt.Println("- - - HOSTS - - -")
 	const first = 0
@@ -291,8 +388,21 @@ func PrintHosts() {
 	}
 }
 
+func removeall(threads []BlockMessage) []BlockMessage {
+	var blocksempty []BlockMessage
+	threads = blocksempty
+	return threads
+}
+
 func main() {
 	var dest string
+	var portreceiver string
+	var threadmessages []BlockMessage
+	var numbermessages string
+	var numbermessagesint int
+	contmessages := 0
+	var wg sync.WaitGroup
+	exist := false
 	end := make(chan int)
 	updatedBlocks := make(chan int)
 	fmt.Print("Enter your host: ")
@@ -301,6 +411,7 @@ func main() {
 	fmt.Scanf("%s\n", &dest)
 	go BCIPServer(end, updatedBlocks)
 	localBlockChain = CreateBlockChain()
+	localBlockChainMessage = CreateMessageBlockChain()
 	if dest != "" {
 		requestBody := &RequestBody{
 			Message:     LOCALHOST,
@@ -317,25 +428,24 @@ func main() {
 	fmt.Println("Bienvenido a E-Salud! 😇")
 	in := bufio.NewReader(os.Stdin)
 	for {
-		ThridEntity :=ThridEntity{
+		ThridEntity := ThridEntity{
 			Username: "banco",
-			
+
 			Password: "nueva",
 
-			Email: "banco@email.com",
-			readwrite:     2,
-
+			Email:     "banco@email.com",
+			readwrite: 2,
 		}
-		dataKeeper :=DataKeeper{
+		dataKeeper := DataKeeper{
 			Username: "data",
-			
+
 			Password: "nueva",
 
 			Email: "data@email.com",
 		}
 		fmt.Print("Welcome thrid entity \n")
-		fmt.Print("1. Add medical reports\n2. see medical reports\n3. List Hosts\n")
-		fmt.Print("😌 Enter action(1|2|3):")
+		fmt.Print("1. Add medical reports\n2. see medical reports\n3. List Hosts\n4. New Message to Send\n5. List Messages Records\n")
+		fmt.Print("😌 Enter action(1|2|3|4|5):")
 		fmt.Scanf("%d\n", &action)
 		if action == NEWMR {
 			medicalRecord := MedicalRecord{}
@@ -354,77 +464,77 @@ func main() {
 			medicalRecord.Medication, _ = in.ReadString('\n')
 			fmt.Print("Enter procedure: ")
 			medicalRecord.Procedure, _ = in.ReadString('\n')
-		    record :=Record{}
-			record.id=len(records)+1
-			record.MedicalRecord=medicalRecord
-			list:= make([]DataKeeper,0)
-			list = append(list,dataKeeper)
-			record.datakeepers=list
-			record.ConsensusLevel= OWNER
+			record := Record{}
+			record.id = len(records) + 1
+			record.MedicalRecord = medicalRecord
+			list := make([]DataKeeper, 0)
+			list = append(list, dataKeeper)
+			record.datakeepers = list
+			record.ConsensusLevel = OWNER
 			policy := Policy{}
-			policy.id=len(policies)+1
-			policy.entity=ThridEntity
-			policy.record=record
-			if(ThridEntity.readwrite==0){
-				policy.level=Read
+			policy.id = len(policies) + 1
+			policy.entity = ThridEntity
+			policy.record = record
+			if ThridEntity.readwrite == 0 {
+				policy.level = Read
 			}
-			if(ThridEntity.readwrite==1){
-				policy.level=Write
+			if ThridEntity.readwrite == 1 {
+				policy.level = Write
 			}
-			if(ThridEntity.readwrite==2){
-				policy.level=ReadOrWrite
+			if ThridEntity.readwrite == 2 {
+				policy.level = ReadOrWrite
 			}
 			newBlock := Block{
 				Data: policy,
 			}
 			localBlockChain.AddBlock(newBlock)
 			BroadcastBlock(newBlock)
-			block:=localBlockChain.GetLatesBlock()
+			block := localBlockChain.GetLatesBlock()
 			fmt.Println(block.Data.level)
-			if(block.Data.level==Write || block.Data.level==ReadOrWrite){
-                  medicalrecords=append(medicalrecords,medicalRecord)
-				  fmt.Println("You have registered successfully! 😀")
-			}else{
+			if block.Data.level == Write || block.Data.level == ReadOrWrite {
+				medicalrecords = append(medicalrecords, medicalRecord)
+				fmt.Println("You have registered successfully! 😀")
+			} else {
 				fmt.Println("Peticion rechazada")
 			}
-			
+
 			time.Sleep(2 * time.Second)
 			PrintMedicalRecords()
 		} else if action == LISTMR {
-			
+
 			var option string
 			fmt.Scanf("%d\n", &option)
 			intVar, err := strconv.Atoi(option)
 			fmt.Println(err)
-			medcilrecordassgin:=medicalrecords[intVar]
-			record :=Record{}
-			record.id=len(records)+1
-			record.MedicalRecord=medcilrecordassgin
-			list:= make([]DataKeeper,0)
-			list = append(list,dataKeeper)
-			record.datakeepers=list
-			record.ConsensusLevel= OWNER
+			medcilrecordassgin := medicalrecords[intVar]
+			record := Record{}
+			record.id = len(records) + 1
+			record.MedicalRecord = medcilrecordassgin
+			list := make([]DataKeeper, 0)
+			list = append(list, dataKeeper)
+			record.datakeepers = list
+			record.ConsensusLevel = OWNER
 			policy := Policy{}
-			policy.id=len(policies)+1
-			policy.entity=ThridEntity
-			policy.record=record
-			if(ThridEntity.readwrite==0){
-				policy.level=Read
+			policy.id = len(policies) + 1
+			policy.entity = ThridEntity
+			policy.record = record
+			if ThridEntity.readwrite == 0 {
+				policy.level = Read
 			}
-			if(ThridEntity.readwrite==1){
-				policy.level=Write
+			if ThridEntity.readwrite == 1 {
+				policy.level = Write
 			}
-			if(ThridEntity.readwrite==2){
-				policy.level=ReadOrWrite
+			if ThridEntity.readwrite == 2 {
+				policy.level = ReadOrWrite
 			}
 			newBlock := Block{
 				Data: policy,
 			}
 			localBlockChain.AddBlock(newBlock)
 			BroadcastBlock(newBlock)
-			block:=localBlockChain.GetLatesBlock()
+			block := localBlockChain.GetLatesBlock()
 			fmt.Println(block.Data.level)
-			if(block.Data.level==Read || block.Data.level==ReadOrWrite){
+			if block.Data.level == Read || block.Data.level == ReadOrWrite {
 				fmt.Println("Medical Record! 😀")
 				fmt.Printf("\tName: %s\n", medcilrecordassgin.Name)
 				fmt.Printf("\tYear: %s\n", medcilrecordassgin.Year)
@@ -433,14 +543,68 @@ func main() {
 				fmt.Printf("\tDiagnostic: %s\n", medcilrecordassgin.Diagnostic)
 				fmt.Printf("\tMedication: %s\n", medcilrecordassgin.Medication)
 				fmt.Printf("\tProcedure: %s\n", medcilrecordassgin.Procedure)
-				  
-			}else{
+
+			} else {
 				fmt.Println("Peticion rechazada")
 			}
 		} else if action == LISTHOSTS {
 			PrintHosts()
+		} else if action == NEWMETS {
+			contmessages = 0
+			messagetosend := Message{}
+			fmt.Println("- - - Message sender - receiver Network - E-Salud - - -")
+			fmt.Printf("Enter the number of messages to send: ")
+			fmt.Scanf("%s\n", &numbermessages)
+			numbermessagesint, _ = strconv.Atoi(numbermessages)
+			for contmessages < numbermessagesint {
+				exist = false
+				fmt.Print("Enter the message to send: ")
+				messagetosend.MessagetoSend, _ = in.ReadString('\n')
+				fmt.Print("Enter the Host to send the message: ")
+				fmt.Scanf("%s\n", &portreceiver)
+				for _, host := range HOSTS {
+					if host == portreceiver {
+						exist = true
+						break
+					} else {
+						exist = false
+					}
+				}
+
+				if exist == true {
+					messagetosend.ToHost = portreceiver
+					messagetosend.FromHost = LOCALHOST
+					newBlock := BlockMessage{
+						Data: messagetosend,
+					}
+					threadmessages = append(threadmessages, newBlock)
+				} else {
+					fmt.Printf("\nNot exist the receiver\n")
+					break
+				}
+				contmessages++
+			}
+
+			if len(threadmessages) > 0 {
+				for i := 0; i < len(threadmessages); i++ {
+					wg.Add(1)
+					go localBlockChainMessage.AddMessageBlock(&wg, threadmessages[i])
+				}
+				wg.Wait()
+				for i := 0; i < len(threadmessages); i++ {
+					wg.Add(1)
+					go BroadcastBlockMessage(&wg, threadmessages[i])
+				}
+				wg.Wait()
+
+				fmt.Println("\nYou have send All the mesages successfully! 😀")
+				time.Sleep(2 * time.Second)
+				PrintMessagesRecords()
+			}
+			threadmessages = removeall(threadmessages)
+		} else if action == LISTMER {
+			PrintMessagesRecords()
 		}
 	}
 	<-end
 }
-
