@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"strconv"
 )
 
 type MessageType int32
@@ -159,8 +160,9 @@ OWNER      ConsensusLevel=3
 type ThridEntity struct{
 	Username       string
 	Password       string
-	FullName       string
 	Email          string
+	readwrite      int
+
 }
 type DataKeeper struct{
 	Username       string
@@ -172,6 +174,7 @@ type Record struct{
     datakeepers  []DataKeeper
 	id           int
     ConsensusLevel ConsensusLevel
+	MedicalRecord  MedicalRecord
 }
 type Policy struct{
   entity ThridEntity
@@ -195,7 +198,7 @@ type MedicalRecord struct {
 type Block struct {
 	Index        int
 	Timestamp    time.Time
-	Data         MedicalRecord
+	Data         Policy
 	PreviousHash string
 	Hash         string
 }
@@ -213,7 +216,7 @@ func (blockChain *BlockChain) CreateGenesisBlock() Block {
 	block := Block{
 		Index:        0,
 		Timestamp:    time.Now(),
-		Data:         MedicalRecord{},
+		Data:         Policy{},
 		PreviousHash: "0",
 	}
 	block.Hash = block.CalculateHash()
@@ -248,22 +251,25 @@ func (blockChain *BlockChain) IsChainValid() bool {
 	return true
 }
 
-func CreateBlockChain() BlockChain {
+func CreateBlockChain() (BlockChain) {
 	bc := BlockChain{}
 	genesisBlock := bc.CreateGenesisBlock()
+	
 	bc.Chain = append(bc.Chain, genesisBlock)
 	return bc
 }
 
 var localBlockChain BlockChain
-
+var policies []Policy
+var records []Record
+var medicalrecords []MedicalRecord
 /******************MAIN**********************/
 
 func PrintMedicalRecords() {
-	blocks := localBlockChain.Chain[1:]
-	for index, block := range blocks {
-		medicalRecord := block.Data
-		fmt.Printf("- - - Medical Record No. %d - - - \n", index+1)
+
+	for block := range medicalrecords {
+		medicalRecord := medicalrecords[block]
+	
 		fmt.Printf("\tName: %s\n", medicalRecord.Name)
 		fmt.Printf("\tYear: %s\n", medicalRecord.Year)
 		fmt.Printf("\tHospital: %s\n", medicalRecord.Hospital)
@@ -271,6 +277,8 @@ func PrintMedicalRecords() {
 		fmt.Printf("\tDiagnostic: %s\n", medicalRecord.Diagnostic)
 		fmt.Printf("\tMedication: %s\n", medicalRecord.Medication)
 		fmt.Printf("\tProcedure: %s\n", medicalRecord.Procedure)
+		fmt.Println()
+		fmt.Print(len(localBlockChain.Chain))
 	}
 }
 
@@ -306,10 +314,27 @@ func main() {
 		<-updatedBlocks
 	}
 	var action int
-	fmt.Println("Welcome to MedicalRecordApp! 😇")
+	fmt.Println("Bienvenido a E-Salud! 😇")
 	in := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("1. New Medical Record\n2. List Medical Records\n3. List Hosts\n")
+		ThridEntity :=ThridEntity{
+			Username: "banco",
+			
+			Password: "nueva",
+
+			Email: "banco@email.com",
+			readwrite:     2,
+
+		}
+		dataKeeper :=DataKeeper{
+			Username: "data",
+			
+			Password: "nueva",
+
+			Email: "data@email.com",
+		}
+		fmt.Print("Welcome thrid entity \n")
+		fmt.Print("1. Add medical reports\n2. see medical reports\n3. List Hosts\n")
 		fmt.Print("😌 Enter action(1|2|3):")
 		fmt.Scanf("%d\n", &action)
 		if action == NEWMR {
@@ -329,16 +354,89 @@ func main() {
 			medicalRecord.Medication, _ = in.ReadString('\n')
 			fmt.Print("Enter procedure: ")
 			medicalRecord.Procedure, _ = in.ReadString('\n')
+		    record :=Record{}
+			record.id=len(records)+1
+			record.MedicalRecord=medicalRecord
+			list:= make([]DataKeeper,0)
+			list = append(list,dataKeeper)
+			record.datakeepers=list
+			record.ConsensusLevel= OWNER
+			policy := Policy{}
+			policy.id=len(policies)+1
+			policy.entity=ThridEntity
+			policy.record=record
+			if(ThridEntity.readwrite==0){
+				policy.level=Read
+			}
+			if(ThridEntity.readwrite==1){
+				policy.level=Write
+			}
+			if(ThridEntity.readwrite==2){
+				policy.level=ReadOrWrite
+			}
 			newBlock := Block{
-				Data: medicalRecord,
+				Data: policy,
 			}
 			localBlockChain.AddBlock(newBlock)
 			BroadcastBlock(newBlock)
-			fmt.Println("You have registered successfully! 😀")
+			block:=localBlockChain.GetLatesBlock()
+			fmt.Println(block.Data.level)
+			if(block.Data.level==Write || block.Data.level==ReadOrWrite){
+                  medicalrecords=append(medicalrecords,medicalRecord)
+				  fmt.Println("You have registered successfully! 😀")
+			}else{
+				fmt.Println("Peticion rechazada")
+			}
+			
 			time.Sleep(2 * time.Second)
 			PrintMedicalRecords()
 		} else if action == LISTMR {
-			PrintMedicalRecords()
+			
+			var option string
+			fmt.Scanf("%d\n", &option)
+			intVar, err := strconv.Atoi(option)
+			fmt.Println(err)
+			medcilrecordassgin:=medicalrecords[intVar]
+			record :=Record{}
+			record.id=len(records)+1
+			record.MedicalRecord=medcilrecordassgin
+			list:= make([]DataKeeper,0)
+			list = append(list,dataKeeper)
+			record.datakeepers=list
+			record.ConsensusLevel= OWNER
+			policy := Policy{}
+			policy.id=len(policies)+1
+			policy.entity=ThridEntity
+			policy.record=record
+			if(ThridEntity.readwrite==0){
+				policy.level=Read
+			}
+			if(ThridEntity.readwrite==1){
+				policy.level=Write
+			}
+			if(ThridEntity.readwrite==2){
+				policy.level=ReadOrWrite
+			}
+			newBlock := Block{
+				Data: policy,
+			}
+			localBlockChain.AddBlock(newBlock)
+			BroadcastBlock(newBlock)
+			block:=localBlockChain.GetLatesBlock()
+			fmt.Println(block.Data.level)
+			if(block.Data.level==Read || block.Data.level==ReadOrWrite){
+				fmt.Println("Medical Record! 😀")
+				fmt.Printf("\tName: %s\n", medcilrecordassgin.Name)
+				fmt.Printf("\tYear: %s\n", medcilrecordassgin.Year)
+				fmt.Printf("\tHospital: %s\n", medcilrecordassgin.Hospital)
+				fmt.Printf("\tDoctor: %s\n", medcilrecordassgin.Doctor)
+				fmt.Printf("\tDiagnostic: %s\n", medcilrecordassgin.Diagnostic)
+				fmt.Printf("\tMedication: %s\n", medcilrecordassgin.Medication)
+				fmt.Printf("\tProcedure: %s\n", medcilrecordassgin.Procedure)
+				  
+			}else{
+				fmt.Println("Peticion rechazada")
+			}
 		} else if action == LISTHOSTS {
 			PrintHosts()
 		}
