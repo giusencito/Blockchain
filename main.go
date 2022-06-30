@@ -144,6 +144,7 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 type Message struct {
 	MessagetoSend string
 	ToHost        string
+	FromHost      string
 }
 
 type Block struct {
@@ -222,13 +223,8 @@ func PrintMedicalRecords() {
 		messagetosend := block.Data
 		fmt.Printf("- - - Message Record No. %d - - - \n", index+1)
 		fmt.Printf("\tMessage: %s\n", messagetosend.MessagetoSend)
+		fmt.Printf("\tFrom: %s\n", messagetosend.FromHost)
 		fmt.Printf("\tTo: %s\n", messagetosend.ToHost)
-		/*
-			fmt.Printf("\tHospital: %s\n", medicalRecord.Hospital)
-			fmt.Printf("\tDoctor: %s\n", medicalRecord.Doctor)
-			fmt.Printf("\tDiagnostic: %s\n", medicalRecord.Diagnostic)
-			fmt.Printf("\tMedication: %s\n", medicalRecord.Medication)
-			fmt.Printf("\tProcedure: %s\n", medicalRecord.Procedure)*/
 	}
 }
 
@@ -307,6 +303,7 @@ func main() {
 
 				if exist == true {
 					messagetosend.ToHost = portreceiver
+					messagetosend.FromHost = LOCALHOST
 					newBlock := Block{
 						Data: messagetosend,
 					}
