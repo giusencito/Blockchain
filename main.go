@@ -16,17 +16,20 @@ import (
 type MessageType int32
 
 const (
-	NEWHOST   MessageType = 0
-	ADDHOST   MessageType = 1
-	ADDBLOCK  MessageType = 2
-	NEWBLOCK  MessageType = 3
-	SETBLOCKS MessageType = 4
-	PROTOCOL              = "tcp"
-	NEWMR                 = 1
-	LISTMR                = 2
-	LISTHOSTS             = 3
-	NEWMETS               = 4
-	LISTMER               = 5
+	NEWHOST          MessageType = 0
+	ADDHOST          MessageType = 1
+	ADDBLOCK         MessageType = 2
+	NEWBLOCK         MessageType = 3
+	SETBLOCKS        MessageType = 4
+	NEWBLOCKMESSAGE  MessageType = 5
+	SETBLOCKSMESSAGE MessageType = 6
+	ADDBLOCKMESSAGE  MessageType = 7
+	PROTOCOL                     = "tcp"
+	NEWMR                        = 1
+	LISTMR                       = 2
+	LISTHOSTS                    = 3
+	NEWMETS                      = 4
+	LISTMER                      = 5
 )
 
 /******************BCIP**********************/
@@ -104,7 +107,7 @@ func BroadcastBlockMessage(wg *sync.WaitGroup, newBlock BlockMessage) {
 		data, _ := json.Marshal(newBlock)
 		requestBroadcast := RequestBody{
 			Message:     string(data),
-			MessageType: ADDBLOCK,
+			MessageType: ADDBLOCKMESSAGE,
 		}
 		broadcastMessage, _ := json.Marshal(requestBroadcast)
 		SendMessage(host, string(broadcastMessage))
@@ -143,12 +146,29 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 		} else if request.MessageType == SETBLOCKS {
 			_ = json.Unmarshal([]byte(request.Message), &localBlockChain.Chain)
 			updatedBlocks <- 0
+		} else if request.MessageType == SETBLOCKSMESSAGE {
+			_ = json.Unmarshal([]byte(request.Message), &localBlockChainMessage.Chain)
+			updatedBlocks <- 0
 		} else if request.MessageType == ADDBLOCK {
 			block := Block{}
 			src := []byte(request.Message)
 			json.Unmarshal(src, &block)
 			localBlockChain.Chain = append(localBlockChain.Chain, block)
+		} else if request.MessageType == ADDBLOCKMESSAGE {
+			block := BlockMessage{}
+			src := []byte(request.Message)
+			json.Unmarshal(src, &block)
+			localBlockChainMessage.Chain = append(localBlockChainMessage.Chain, block)
+		} else if request.MessageType == NEWBLOCKMESSAGE {
+			blocksMessage, _ := json.Marshal(localBlockChainMessage.Chain)
+			setBlocksRequest := RequestBody{
+				Message:     string(blocksMessage),
+				MessageType: SETBLOCKSMESSAGE,
+			}
+			setBlocksMessage, _ := json.Marshal(setBlocksRequest)
+			SendMessage(request.Message, string(setBlocksMessage))
 		}
+
 	}
 	end <- 0
 }
@@ -421,8 +441,21 @@ func main() {
 		SendMessage(dest, string(requestMessage))
 		requestBody.MessageType = NEWBLOCK
 		requestMessage, _ = json.Marshal(requestBody)
+		/*requestBody.MessageType = NEWBLOCKMESSAGE
+		requestMessage, _ = json.Marshal(requestBody)*/
 		SendMessage(dest, string(requestMessage))
 		<-updatedBlocks
+
+		/*requestBody2 := &RequestBody{
+			Message:     LOCALHOST,
+			MessageType: NEWHOST,
+		}
+		requestMessage2, _ := json.Marshal(requestBody2)
+		SendMessage(dest, string(requestMessage2))
+		requestBody2.MessageType = NEWBLOCKMESSAGE
+		requestMessage2, _ = json.Marshal(requestBody2)
+		SendMessage(dest, string(requestMessage2))
+		<-updatedBlocks*/
 	}
 	var action int
 	fmt.Println("Bienvenido a E-Salud! 😇")
