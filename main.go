@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -82,7 +84,8 @@ func Broadcast(newHost string) {
 	}
 }
 
-func BroadcastBlock(newBlock Block) {
+func BroadcastBlock(wg *sync.WaitGroup, newBlock Block) {
+	defer wg.Done()
 	for _, host := range HOSTS {
 		data, _ := json.Marshal(newBlock)
 		requestBroadcast := RequestBody{
@@ -95,10 +98,8 @@ func BroadcastBlock(newBlock Block) {
 }
 
 func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
-	fmt.Println("NEw listen antes de  Protocol y localhosty DEst correiendo antes de la validacion")
 	ln, _ := net.Listen(PROTOCOL, LOCALHOST)
 	defer ln.Close()
-
 	for {
 		conn, _ := ln.Accept()
 		defer conn.Close()
@@ -140,16 +141,6 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 
 /******************BLOCKCHAIN**********************/
 
-/*type MedicalRecord struct {
-	Name       string
-	Year       string
-	Hospital   string
-	Doctor     string
-	Diagnostic string
-	Medication string
-	Procedure  string
-}*/
-
 type Message struct {
 	MessagetoSend string
 	ToHost        string
@@ -190,7 +181,8 @@ func (blockChain *BlockChain) GetLatesBlock() Block {
 	return blockChain.Chain[n-1]
 }
 
-func (blockChain *BlockChain) AddBlock(block Block) {
+func (blockChain *BlockChain) AddBlock(wg *sync.WaitGroup, block Block) {
+	defer wg.Done()
 	block.Timestamp = time.Now()
 	block.Index = blockChain.GetLatesBlock().Index + 1
 	block.PreviousHash = blockChain.GetLatesBlock().Hash
@@ -249,9 +241,20 @@ func PrintHosts() {
 	}
 }
 
+func removeall(threads []Block) []Block {
+	var blocksempty []Block
+	threads = blocksempty
+	return threads
+}
+
 func main() {
 	var dest string
 	var portreceiver string
+	var threadmessages []Block
+	var numbermessages string
+	var numbermessagesint int
+	contmessages := 0
+	var wg sync.WaitGroup
 	exist := false
 	end := make(chan int)
 	updatedBlocks := make(chan int)
@@ -260,7 +263,6 @@ func main() {
 	fmt.Print("Enter destination host(Empty to be the first node): ")
 	fmt.Scanf("%s\n", &dest)
 	go BCIPServer(end, updatedBlocks)
-	fmt.Print("Luego del BCIP")
 	localBlockChain = CreateBlockChain()
 	if dest != "" {
 		requestBody := &RequestBody{
@@ -282,46 +284,57 @@ func main() {
 		fmt.Print("😌 Enter action(1|2|3):")
 		fmt.Scanf("%d\n", &action)
 		if action == NEWMR {
+			contmessages = 0
 			messagetosend := Message{}
 			fmt.Println("- - - Message sender- receiver Network - - -")
-			fmt.Print("Enter the message to send: ")
-			messagetosend.MessagetoSend, _ = in.ReadString('\n')
-			fmt.Print("Enter the Host to send the message: ")
-			fmt.Scanf("%s\n", &portreceiver)
+			fmt.Printf("Enter the number of messages to send: ")
+			fmt.Scanf("%s\n", &numbermessages)
+			numbermessagesint, _ = strconv.Atoi(numbermessages)
+			for contmessages < numbermessagesint {
+				exist = false
+				fmt.Print("Enter the message to send: ")
+				messagetosend.MessagetoSend, _ = in.ReadString('\n')
+				fmt.Print("Enter the Host to send the message: ")
+				fmt.Scanf("%s\n", &portreceiver)
+				for _, host := range HOSTS {
+					if host == portreceiver {
+						exist = true
 
-			for _, host := range HOSTS {
-				if host == portreceiver {
-					exist = true
-
-				} else {
-					exist = false
+					} else {
+						exist = false
+					}
 				}
+
+				if exist == true {
+					messagetosend.ToHost = portreceiver
+					newBlock := Block{
+						Data: messagetosend,
+					}
+					threadmessages = append(threadmessages, newBlock)
+				} else {
+					fmt.Printf("\nNot exist the receiver\n")
+					break
+				}
+				contmessages++
 			}
 
-			if exist == true {
-				messagetosend.ToHost = portreceiver
-				newBlock := Block{
-					Data: messagetosend,
+			if len(threadmessages) > 0 {
+				for i := 0; i < len(threadmessages); i++ {
+					wg.Add(1)
+					go localBlockChain.AddBlock(&wg, threadmessages[i])
 				}
-				localBlockChain.AddBlock(newBlock)
-				BroadcastBlock(newBlock)
-				fmt.Println("You have send the mesage successfully! 😀\n")
+				wg.Wait()
+				for i := 0; i < len(threadmessages); i++ {
+					wg.Add(1)
+					go BroadcastBlock(&wg, threadmessages[i])
+				}
+				wg.Wait()
+
+				fmt.Println("\nYou have send All the mesages successfully! 😀")
 				time.Sleep(2 * time.Second)
 				PrintMedicalRecords()
-			} else {
-				fmt.Printf("Not exist the receiver\n")
 			}
-			/*fmt.Print("Enter hospital: ")
-			medicalRecord.Hospital, _ = in.ReadString('\n')
-			fmt.Print("Enter doctor: ")
-			medicalRecord.Doctor, _ = in.ReadString('\n')
-			fmt.Print("Enter diagnostic: ")
-			medicalRecord.Diagnostic, _ = in.ReadString('\n')
-			fmt.Print("Enter medication: ")
-			medicalRecord.Medication, _ = in.ReadString('\n')
-			fmt.Print("Enter procedure: ")
-			medicalRecord.Procedure, _ = in.ReadString('\n')*/
-
+			threadmessages = removeall(threadmessages)
 		} else if action == LISTMR {
 			PrintMedicalRecords()
 		} else if action == LISTHOSTS {
