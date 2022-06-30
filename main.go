@@ -299,7 +299,7 @@ func main() {
 				for _, host := range HOSTS {
 					if host == portreceiver {
 						exist = true
-
+						break
 					} else {
 						exist = false
 					}
