@@ -441,21 +441,10 @@ func main() {
 		SendMessage(dest, string(requestMessage))
 		requestBody.MessageType = NEWBLOCK
 		requestMessage, _ = json.Marshal(requestBody)
-		/*requestBody.MessageType = NEWBLOCKMESSAGE
-		requestMessage, _ = json.Marshal(requestBody)*/
+		requestBody.MessageType = NEWBLOCKMESSAGE
+		requestMessage, _ = json.Marshal(requestBody)
 		SendMessage(dest, string(requestMessage))
 		<-updatedBlocks
-
-		/*requestBody2 := &RequestBody{
-			Message:     LOCALHOST,
-			MessageType: NEWHOST,
-		}
-		requestMessage2, _ := json.Marshal(requestBody2)
-		SendMessage(dest, string(requestMessage2))
-		requestBody2.MessageType = NEWBLOCKMESSAGE
-		requestMessage2, _ = json.Marshal(requestBody2)
-		SendMessage(dest, string(requestMessage2))
-		<-updatedBlocks*/
 	}
 	var action int
 	fmt.Println("Bienvenido a E-Salud! 😇")
