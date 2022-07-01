@@ -24,6 +24,9 @@ const (
 	NEWBLOCKMESSAGE  MessageType = 5
 	SETBLOCKSMESSAGE MessageType = 6
 	ADDBLOCKMESSAGE  MessageType = 7
+	NEWBLOCKMEDICAL  MessageType = 8
+	SETBLOCKSMEDICAL MessageType = 9
+	ADDBLOCKMEDICAL  MessageType = 10
 	PROTOCOL                     = "tcp"
 	NEWMR                        = 1
 	LISTMR                       = 2
@@ -101,6 +104,18 @@ func BroadcastBlock(newBlock Block) {
 	}
 }
 
+func BroadcastBlockMedical(newBlock BlockMedical) {
+	for _, host := range HOSTS {
+		data, _ := json.Marshal(newBlock)
+		requestBroadcast := RequestBody{
+			Message:     string(data),
+			MessageType: ADDBLOCKMEDICAL,
+		}
+		broadcastMessage, _ := json.Marshal(requestBroadcast)
+		SendMessage(host, string(broadcastMessage))
+	}
+}
+
 func BroadcastBlockMessage(wg *sync.WaitGroup, newBlock BlockMessage) {
 	defer wg.Done()
 	for _, host := range HOSTS {
@@ -149,6 +164,9 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 		} else if request.MessageType == SETBLOCKSMESSAGE {
 			_ = json.Unmarshal([]byte(request.Message), &localBlockChainMessage.Chain)
 			updatedBlocks <- 0
+		} else if request.MessageType == SETBLOCKSMEDICAL {
+			_ = json.Unmarshal([]byte(request.Message), &localBlockChainMedical.Chain)
+			updatedBlocks <- 0
 		} else if request.MessageType == ADDBLOCK {
 			block := Block{}
 			src := []byte(request.Message)
@@ -159,11 +177,24 @@ func BCIPServer(end chan<- int, updatedBlocks chan<- int) {
 			src := []byte(request.Message)
 			json.Unmarshal(src, &block)
 			localBlockChainMessage.Chain = append(localBlockChainMessage.Chain, block)
+		} else if request.MessageType == ADDBLOCKMEDICAL {
+			block := BlockMedical{}
+			src := []byte(request.Message)
+			json.Unmarshal(src, &block)
+			localBlockChainMedical.Chain = append(localBlockChainMedical.Chain, block)
 		} else if request.MessageType == NEWBLOCKMESSAGE {
 			blocksMessage, _ := json.Marshal(localBlockChainMessage.Chain)
 			setBlocksRequest := RequestBody{
 				Message:     string(blocksMessage),
 				MessageType: SETBLOCKSMESSAGE,
+			}
+			setBlocksMessage, _ := json.Marshal(setBlocksRequest)
+			SendMessage(request.Message, string(setBlocksMessage))
+		} else if request.MessageType == NEWBLOCKMEDICAL {
+			blocksMessage, _ := json.Marshal(localBlockChainMedical.Chain)
+			setBlocksRequest := RequestBody{
+				Message:     string(blocksMessage),
+				MessageType: SETBLOCKSMEDICAL,
 			}
 			setBlocksMessage, _ := json.Marshal(setBlocksRequest)
 			SendMessage(request.Message, string(setBlocksMessage))
@@ -242,6 +273,14 @@ type Block struct {
 	Hash         string
 }
 
+type BlockMedical struct {
+	Index        int
+	Timestamp    time.Time
+	Data         MedicalRecord
+	PreviousHash string
+	Hash         string
+}
+
 type BlockMessage struct {
 	Index        int
 	Timestamp    time.Time
@@ -260,12 +299,21 @@ func (block *BlockMessage) CalculateHashMessage() string {
 	return base64.StdEncoding.EncodeToString([]byte(src))
 }
 
+func (block *BlockMedical) CalculateHashMedical() string {
+	src := fmt.Sprintf("%d-%s-%s", block.Index, block.Timestamp.String(), block.Data)
+	return base64.StdEncoding.EncodeToString([]byte(src))
+}
+
 type BlockChain struct {
 	Chain []Block
 }
 
 type BlockChainMessages struct {
 	Chain []BlockMessage
+}
+
+type BlockChainMedical struct {
+	Chain []BlockMedical
 }
 
 func (blockChain *BlockChain) CreateGenesisBlock() Block {
@@ -290,12 +338,28 @@ func (blockChain *BlockChainMessages) CreateGenesisMessageBlock() BlockMessage {
 	return block
 }
 
+func (blockChain *BlockChainMedical) CreateGenesisMedicalBlock() BlockMedical {
+	block := BlockMedical{
+		Index:        0,
+		Timestamp:    time.Now(),
+		Data:         MedicalRecord{},
+		PreviousHash: "0",
+	}
+	block.Hash = block.CalculateHashMedical()
+	return block
+}
+
 func (blockChain *BlockChain) GetLatesBlock() Block {
 	n := len(blockChain.Chain)
 	return blockChain.Chain[n-1]
 }
 
 func (blockChain *BlockChainMessages) GetLatesMessageBlock() BlockMessage {
+	n := len(blockChain.Chain)
+	return blockChain.Chain[n-1]
+}
+
+func (blockChain *BlockChainMedical) GetLatesMedicalBlock() BlockMedical {
 	n := len(blockChain.Chain)
 	return blockChain.Chain[n-1]
 }
@@ -314,6 +378,14 @@ func (blockChain *BlockChainMessages) AddMessageBlock(wg *sync.WaitGroup, block 
 	block.Index = blockChain.GetLatesMessageBlock().Index + 1
 	block.PreviousHash = blockChain.GetLatesMessageBlock().Hash
 	block.Hash = block.CalculateHashMessage()
+	blockChain.Chain = append(blockChain.Chain, block)
+}
+
+func (blockChain *BlockChainMedical) AddMedicalBlock(block BlockMedical) {
+	block.Timestamp = time.Now()
+	block.Index = blockChain.GetLatesMedicalBlock().Index + 1
+	block.PreviousHash = blockChain.GetLatesMedicalBlock().Hash
+	block.Hash = block.CalculateHashMedical()
 	blockChain.Chain = append(blockChain.Chain, block)
 }
 
@@ -347,6 +419,21 @@ func (blockChain *BlockChainMessages) IsMessagesChainValid() bool {
 	return true
 }
 
+func (blockChain *BlockChainMedical) IsMedicalChainValid() bool {
+	n := len(blockChain.Chain)
+	for i := 1; i < n; i++ {
+		currentBlock := blockChain.Chain[i]
+		previousBlock := blockChain.Chain[i-1]
+		if currentBlock.Hash != currentBlock.CalculateHashMedical() {
+			return false
+		}
+		if currentBlock.PreviousHash != previousBlock.Hash {
+			return false
+		}
+	}
+	return true
+}
+
 func CreateBlockChain() BlockChain {
 	bc := BlockChain{}
 	genesisBlock := bc.CreateGenesisBlock()
@@ -363,8 +450,17 @@ func CreateMessageBlockChain() BlockChainMessages {
 	return bc
 }
 
+func CreateMedicalBlockChain() BlockChainMedical {
+	bc := BlockChainMedical{}
+	genesisBlock := bc.CreateGenesisMedicalBlock()
+
+	bc.Chain = append(bc.Chain, genesisBlock)
+	return bc
+}
+
 var localBlockChain BlockChain
 var localBlockChainMessage BlockChainMessages
+var localBlockChainMedical BlockChainMedical
 var policies []Policy
 var records []Record
 var medicalrecords []MedicalRecord
@@ -385,6 +481,21 @@ func PrintMedicalRecords() {
 		fmt.Printf("\tProcedure: %s\n", medicalRecord.Procedure)
 		fmt.Println()
 		fmt.Print(len(localBlockChain.Chain))
+	}
+}
+
+func PrintMedicalRecordstwo() {
+	blocks := localBlockChainMedical.Chain[1:]
+	for index, block := range blocks {
+		medicalRecord := block.Data
+		fmt.Printf("- - - Medical Record No. %d - - - \n", index+1)
+		fmt.Printf("\tName: %s\n", medicalRecord.Name)
+		fmt.Printf("\tYear: %s\n", medicalRecord.Year)
+		fmt.Printf("\tHospital: %s\n", medicalRecord.Hospital)
+		fmt.Printf("\tDoctor: %s\n", medicalRecord.Doctor)
+		fmt.Printf("\tDiagnostic: %s\n", medicalRecord.Diagnostic)
+		fmt.Printf("\tMedication: %s\n", medicalRecord.Medication)
+		fmt.Printf("\tProcedure: %s\n", medicalRecord.Procedure)
 	}
 }
 
@@ -431,6 +542,7 @@ func main() {
 	fmt.Scanf("%s\n", &dest)
 	go BCIPServer(end, updatedBlocks)
 	localBlockChain = CreateBlockChain()
+	localBlockChainMedical = CreateMedicalBlockChain()
 	localBlockChainMessage = CreateMessageBlockChain()
 	if dest != "" {
 		requestBody := &RequestBody{
@@ -442,6 +554,9 @@ func main() {
 		requestBody.MessageType = NEWBLOCK
 		requestMessage, _ = json.Marshal(requestBody)
 		requestBody.MessageType = NEWBLOCKMESSAGE
+		requestMessage, _ = json.Marshal(requestBody)
+		SendMessage(dest, string(requestMessage))
+		requestBody.MessageType = NEWBLOCKMEDICAL
 		requestMessage, _ = json.Marshal(requestBody)
 		SendMessage(dest, string(requestMessage))
 		<-updatedBlocks
@@ -486,6 +601,11 @@ func main() {
 			medicalRecord.Medication, _ = in.ReadString('\n')
 			fmt.Print("Enter procedure: ")
 			medicalRecord.Procedure, _ = in.ReadString('\n')
+			newBlockMedical := BlockMedical{
+				Data: medicalRecord,
+			}
+			localBlockChainMedical.AddMedicalBlock(newBlockMedical)
+			BroadcastBlockMedical(newBlockMedical)
 			record := Record{}
 			record.id = len(records) + 1
 			record.MedicalRecord = medicalRecord
@@ -523,8 +643,7 @@ func main() {
 			time.Sleep(2 * time.Second)
 			PrintMedicalRecords()
 		} else if action == LISTMR {
-
-			var option string
+			/*var option string
 			fmt.Scanf("%d\n", &option)
 			intVar, err := strconv.Atoi(option)
 			fmt.Println(err)
@@ -568,7 +687,8 @@ func main() {
 
 			} else {
 				fmt.Println("Peticion rechazada")
-			}
+			}*/
+			PrintMedicalRecordstwo()
 		} else if action == LISTHOSTS {
 			PrintHosts()
 		} else if action == NEWMETS {
