@@ -551,14 +551,29 @@ func main() {
 		}
 		requestMessage, _ := json.Marshal(requestBody)
 		SendMessage(dest, string(requestMessage))
+
 		requestBody.MessageType = NEWBLOCK
 		requestMessage, _ = json.Marshal(requestBody)
-		requestBody.MessageType = NEWBLOCKMESSAGE
-		requestMessage, _ = json.Marshal(requestBody)
 		SendMessage(dest, string(requestMessage))
-		requestBody.MessageType = NEWBLOCKMEDICAL
-		requestMessage, _ = json.Marshal(requestBody)
-		SendMessage(dest, string(requestMessage))
+		<-updatedBlocks
+
+		requestBody2 := &RequestBody{
+			Message:     LOCALHOST,
+			MessageType: NEWHOST,
+		}
+		requestBody2.MessageType = NEWBLOCKMESSAGE
+		requestMessage2, _ := json.Marshal(requestBody2)
+		SendMessage(dest, string(requestMessage2))
+		<-updatedBlocks
+
+		requestBody3 := &RequestBody{
+			Message:     LOCALHOST,
+			MessageType: NEWHOST,
+		}
+
+		requestBody3.MessageType = NEWBLOCKMEDICAL
+		requestMessage3, _ := json.Marshal(requestBody3)
+		SendMessage(dest, string(requestMessage3))
 		<-updatedBlocks
 	}
 	var action int
@@ -643,51 +658,6 @@ func main() {
 			time.Sleep(2 * time.Second)
 			PrintMedicalRecords()
 		} else if action == LISTMR {
-			/*var option string
-			fmt.Scanf("%d\n", &option)
-			intVar, err := strconv.Atoi(option)
-			fmt.Println(err)
-			medcilrecordassgin := medicalrecords[intVar]
-			record := Record{}
-			record.id = len(records) + 1
-			record.MedicalRecord = medcilrecordassgin
-			list := make([]DataKeeper, 0)
-			list = append(list, dataKeeper)
-			record.datakeepers = list
-			record.ConsensusLevel = OWNER
-			policy := Policy{}
-			policy.id = len(policies) + 1
-			policy.entity = ThridEntity
-			policy.record = record
-			if ThridEntity.readwrite == 0 {
-				policy.level = Read
-			}
-			if ThridEntity.readwrite == 1 {
-				policy.level = Write
-			}
-			if ThridEntity.readwrite == 2 {
-				policy.level = ReadOrWrite
-			}
-			newBlock := Block{
-				Data: policy,
-			}
-			localBlockChain.AddBlock(newBlock)
-			BroadcastBlock(newBlock)
-			block := localBlockChain.GetLatesBlock()
-			fmt.Println(block.Data.level)
-			if block.Data.level == Read || block.Data.level == ReadOrWrite {
-				fmt.Println("Medical Record! 😀")
-				fmt.Printf("\tName: %s\n", medcilrecordassgin.Name)
-				fmt.Printf("\tYear: %s\n", medcilrecordassgin.Year)
-				fmt.Printf("\tHospital: %s\n", medcilrecordassgin.Hospital)
-				fmt.Printf("\tDoctor: %s\n", medcilrecordassgin.Doctor)
-				fmt.Printf("\tDiagnostic: %s\n", medcilrecordassgin.Diagnostic)
-				fmt.Printf("\tMedication: %s\n", medcilrecordassgin.Medication)
-				fmt.Printf("\tProcedure: %s\n", medcilrecordassgin.Procedure)
-
-			} else {
-				fmt.Println("Peticion rechazada")
-			}*/
 			PrintMedicalRecordstwo()
 		} else if action == LISTHOSTS {
 			PrintHosts()
